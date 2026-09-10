@@ -1,0 +1,159 @@
+---
+title: "Session 01: Getting Started with R"
+format: 
+    html: 
+        code-fold: true
+        code-copy: false
+        toc: true
+        number-sections: false
+execute:
+    echo: true
+---
+
+## Learning goals 
+
+- identify the main parts of the Positron interface
+- run R code in a Quarto (`.qmd`) document and preview the result
+- understand objects, functions, vectors, and data frames
+
+
+## Positron and the project folder
+
+Open a folder for this course in Positron. Keeping the Quarto file and any data files in one project folder makes file paths simpler and your work easier to reproduce.
+
+Positron may arrange panes differently depending on your window size, but these are the main components:
+
+| Component | What it is for |
+|---|---|
+| Editor | Write and save `.qmd` and `.R` files. |
+| Console | Run R commands and see immediate output. |
+| Variables | See objects currently stored in memory. |
+| Data Explorer | Inspect a data frame in a spreadsheet-like view. |
+| Plots | View plots produced by R. |
+| Help | Read documentation for functions and packages. |
+| Viewer | Preview rendered Quarto documents. |
+
+
+Check that an **R interpreter** is active. Then open this file and use the **Run Cell** button above a code cell. Use **Preview** to render the entire document.
+
+## What is Quarto?
+
+A Quarto document combines three things: 
+
+1. a YAML header between the `---` lines;
+2. Markdown text, headings, lists, and links;
+3. Executable code cells.
+
+The example below is an R code cell. Run it, change the numbers, and run it again. 
+
+
+```{r - addition-operation, include = TRUE}
+2 + 3
+```
+
+You can also set cell options that way: 
+
+
+```{r - addition-operation}
+#| label: addition-operation
+#| include: true
+
+2 + 2
+```
+
+Common options include: 
+
+| Option | Effect |
+|---|---|
+| `echo: false` | Run the code but hide the code in the rendered document. |
+| `output: false` | Run the code but hide its output. |
+| `include: false` | Run the code but show neither code nor output. |
+| `eval: false` | Show the code but do not run it. |
+
+## Programming in R
+
+Programming means giving a computer clear instructions. A computer processor cannot execute R code directly. The R interpreter reads and evaluates the R code, using lower-level computer instructions to carry out the requested operations. This allows us to write understandable R code instead of machine code. 
+
+A common pattern in programming with R (also applies to Python) is: 
+
+1. generate or load data
+2. store it in an object
+3. transform the object with a function
+4. inspect or communicate the result
+
+### Objects and assignment
+
+The assignment operator `<-` gives a value a name and it stored in computer's memory with that name. 
+
+
+```{r - objects in R }
+course_name <- "Data Science Tools"
+number_of_students <- 24
+class_average <- 78.5
+
+course_name
+number_of_students
+class_average
+```
+
+### Vectors and vectorized operations
+
+A **vector** contains values of the same basic type. The function `c()` combines values into a vector. 
+
+
+```{r - vectors}
+study_hours <- c(3, 5, 4, 8, 6)
+study_hours
+
+#study_hours * 60
+study_minutes <- study_hours * 60 # R applies this operation to every item stored in the vector
+study_minutes
+
+study_hours >= 5 # This comparison returns TRUE or FALSE for each item 
+```
+
+
+We can use square brackets to select specific elements. The condition we specify within square brackets tells R which elements to select.
+
+
+```{r - vector-selection}
+
+study_hours[study_hours>=5] 
+
+```
+
+### Functions and arguments
+
+A functions performs an operation. Values supplied inside parantheses are its arguments.
+
+
+```{r - functions}
+
+mean(study_hours) # this is a built-in function.  
+
+sum(study_hours)/length(study_hours) # this is another way to perform the same task, but redundant given we already have the fuction above. 
+
+round(mean(study_hours))
+```
+
+
+We can use `?function_name` or `help(function_name)` to open documentation of a function. 
+
+
+```{r - function-documentation}
+
+?mean
+help(mean)
+```
+
+
+#### Exercise 1
+::: {.callout title="Exercise 1"}
+
+Create a vector named `temperatures`. It must contain the values `18`, `20`, `19`, `23`, and `17`. Then calculate its mean.
+
+```{r - exercise-1}
+mean(c(18, 20, 19, 23, 17))
+```
+
+:::
