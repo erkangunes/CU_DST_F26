@@ -1,0 +1,364 @@
+---
+title: "Session 02: Working with Rectangular Data"
+format: 
+    html: 
+        code-fold: true
+        code-copy: false
+        toc: true
+        number-sections: false
+execute:
+    echo: true
+---
+
+## Learning goals 
+
+- explain objects, functions, vectors, and data frames
+- inspect, filter, and summarize data
+- distinguish base R and the tidyverse
+
+## Working with data frames in base R
+
+### Generating synthetic (fake) data
+
+We will generate a synthetic dataset for demonstration. The information in the dataset does not describe real students. 
+
+
+```{r - generate-synthetic-data, echo = FALSE}
+set.seed(2847) #this makes random values reproducible.
+
+students <- data.frame(
+  id = 1:12,
+  group = sample(c("A", "B"), size = 12, replace = TRUE),
+  study_hours = round(rnorm(12, mean = 6, sd = 1.8), 1),
+  attended_lab = sample(
+    c(TRUE, FALSE),
+    size = 12,
+    replace = TRUE,
+    prob = c(0.75, 0.25)
+  )
+)
+# Keep study hours at zero or above
+students$study_hours <- pmax(students$study_hours, 0)
+
+# Create a score related to study time and lab attendance
+students$score <- round(
+  48 + 4.5 * students$study_hours +
+    7 * students$attended_lab + rnorm(12, mean = 0, sd = 5)
+)
+
+# Keep scores between 0 and 100
+students$score <- pmin(pmax(students$score, 0), 100)
+
+# Add two missing scores
+students$score[c(4, 10)] <- NA
+
+students
+
+```
+
+
+### Inspect a data frame
+
+A data frame is an object that stores structured data in rectangular format where columns are variables and rows are observations.
+
+```{r - inspect-synthetic-data}
+
+head(students, 10) # Returns the first n rows of a data frame
+dim(students)  # Returns the dimension (rows X columns) of a data frame
+names(students)  # Returns the list of column names  
+str(students) # Returns information about variable types and content
+summary(students) # Returns information about distributional characteristics of variables
+```
+
+### Select columns and rows
+
+Use `$` to select one column. 
+
+
+```{r - select-data}}
+
+students$study_hours
+mean(students$study_hours)
+
+students[1:5, c("id", "study_hours")]
+```
+
+We can also use square brackets as `data[rows, columns]`.
+
+### ## Missing values
+
+`NA` means that a value is missing. Comparisons with a missing value usually return `NA`, so many functions need `na.rm = TRUE`.
+
+```{r - missing-values}
+
+is.na(students$score)
+sum(is.na(students$score))
+
+mean(students$score)
+mean(students$score, na.rm = TRUE)
+```
+
+## Base R and the tidyverse
+
+- Base R is installed with R. All built-in functions, objects, and methods are what we call base R.   
+- The **tidyverse** is a collection of R packages developed for common data science tasks, such as importing, organizing, transforming, and visualizing data. These packages share a common design philosophy, grammar, and data structures, which makes them work together consistently. 
+- Learning some base R helps you understand the language, but **tidyverse** functions often make multi-step data work easier to read.
+
+Packages provide additional functions and tools. Some packages come with R, while others, such as the **tidyverse**, must be installed separately. We install a package once and load it into each R session when we want to use it.
+
+
+```{r - install and load tidyverse}
+#install.packages("tidyverse")
+library("tidyverse")
+```
+
+### The pipe and data verbs
+
+The native R pipe `|>` sends the result on its left to the next function. Read it as **then**.
+
+
+```{r - first pipeline}
+
+students |>
+    filter(study_hours >= 6) |>
+    select(id, group, study_hours, score)
+```
+
+This pipeline translates into: 
+
+1. Start with `students` data frame
+2. Then keep rows where `study_hours` variable is greater than or equal to 6
+3. Then keep these four columns: `id`, `group`, `study_hours`, and `score`
+
+The same task in base R would look like this: 
+
+```{r - baser R vs tidyverse, output = FALSE}
+
+students[
+  students$study_hours >= 6,
+  c("id", "group", "study_hours", "score")
+]
+
+```
+
+
+### Create and summarize variables with dplyr
+
+`mutate()` creates or changes columns. `group_by()` and `summarise()` calculate group-level results.
+
+```{r - mutate-and-summarise}
+
+students_with_minutes <- students |>
+  mutate(study_minutes = study_hours * 60)
+
+students_with_minutes |>
+  group_by(group) |>
+  summarise(
+    number_of_students = n(),
+    average_score = mean(score, na.rm = TRUE)
+  )
+```
+
+
+### Data frames and tibbles
+
+A **tibble** is the tidyverse version of a data frame. It stores rectangular data in the same basic way, but prints large datasets more compactly.
+
+```{r}
+#| label: create-tibble
+
+students_tbl <- as_tibble(students)
+
+students_tbl
+```
+
+Most `dplyr` functions work with both ordinary data frames and tibbles.
+
+### Arrange rows
+
+`arrange()` changes the order of rows. By default, it sorts from the smallest value to the largest.
+
+```{r - arrange-rows}
+students
+students |>
+  arrange(score)
+```
+
+Use `desc()` to reverse the order.
+
+```{r - arrange-descending}
+
+students |>
+  arrange(desc(score)) |>
+  select(id, group, score)
+```
+
+`arrange()` does not remove rows or change their values. It only changes their order.
+
+### Find and count categories
+
+`distinct()` shows the unique values of one or more variables. `count()` reports how many observations belong to each category.
+
+```{r - distinct-and-count}
+
+students |>
+  distinct(group)
+
+students |>
+  count(group)
+```
+
+### Filter missing and non-missing values
+
+Use `is.na()` inside `filter()` to keep rows with missing values. Add `!`, meaning **not**, to keep rows without missing values.
+
+```{r - filter-missing-values}
+
+is.na(students$score)
+
+# Students whose score is missing
+students |>
+  filter(is.na(score))
+
+# Students whose score is not missing
+students |>
+  filter(!is.na(score))
+```
+
+### Combine several operations
+
+Each verb performs one task. The pipe lets us combine them into a sequence that can be read from top to bottom.
+
+```{r - combined-dplyr-operations}
+
+students |>
+  filter(!is.na(score)) |>
+  arrange(desc(score)) |>
+  select(id, group, study_hours, score)
+```
+
+Read this as: start with `students`, **then** remove missing scores, **then** sort from the highest score to the lowest, and **then** keep four columns.
+
+## The NYC flights data
+
+We now apply the same ideas to a real data set. The `nycflights13` package contains information about flights departing New York City in 2013.
+
+```{r - load-flights}
+library(nycflights13)
+
+flights_all <- nycflights13::flights
+
+```
+
+Use the help page to read the variable descriptions.
+
+```{r - label: flights-help, eval = FALSE}
+
+?nycflights13::flights
+
+```
+
+The full data set has more than 300,000 rows. We will use September flights for most examples.
+
+```{r - september-flights}
+
+flights_sep <- flights_all |>
+  filter(month == 9)
+
+nrow(flights_all)
+nrow(flights_sep)
+```
+
+### Inspect the data
+
+`glimpse()` shows column names, data types, and example values.
+
+```{r - inspect-flights}
+
+dim(flights_sep)
+glimpse(flights_sep)
+```
+
+You can also inspect the data in Positron without changing it.
+
+```{r - view-flights, eval = FALSE}
+
+View(flights_sep)
+```
+
+### Types and classes
+
+`typeof()` reports how an object is stored. `class()` reports how R should treat it.
+
+```{r - flights-variable-types}
+
+typeof(flights_sep$dep_time)
+class(flights_sep$dep_time)
+
+typeof(flights_sep$arr_delay)
+class(flights_sep$arr_delay)
+
+typeof(flights_sep$origin)
+class(flights_sep$origin)
+```
+
+
+### Missing values
+
+Count missing departure times in base R.
+
+```{r - missing-flight-values}
+
+sum(is.na(flights_sep$dep_time))
+summary(flights_sep$dep_time)
+```
+
+Count missing values in every column.
+
+```{r - missing-all-columns}
+
+colSums(is.na(flights_sep))
+```
+
+Do not remove missing values automatically. First ask what they mean and whether the variables are needed for the current analysis. 
+
+### Categorical variables
+
+`origin` is stored as character data, but it represents categories. Base R and `dplyr` can both count its values.
+
+```{r - categorical-counts}
+
+table(flights_sep$origin)
+
+flights_sep |>
+  count(origin)
+```
+
+Factors are useful when categories have a fixed set or order.
+
+```{r - factors}
+
+origin_factor <- factor(flights_sep$origin)
+class(origin_factor)
+levels(origin_factor)
+```
+
+### Date-time variables
+
+`time_hour` has a special class, so date-time functions can operate on it.
+
+```{r - datetimes}
+
+head(flights_sep$time_hour)
+class(flights_sep$time_hour)
+
+table(weekdays(flights_sep$time_hour))
+```
+
+The tidyverse package `lubridate` provides additional date-time functions. For example, `wday()` can return weekday labels.
+
+```{r - weekdays-lubridate}
+
+flights_sep |>
+  count(weekday = wday(time_hour, label = TRUE))
+```
