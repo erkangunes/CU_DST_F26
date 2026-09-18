@@ -1,0 +1,306 @@
+---
+title: "Session 03: Data visualization with ggplot"
+format: 
+    html: 
+        code-fold: true
+        code-copy: false
+        toc: true
+        number-sections: false
+execute:
+    echo: true
+---
+
+## Learning goals 
+
+- Learning the basic plot types and implementing them with ggplot2
+- Learning the logic of mapping variables to visual properties
+- Building more complex visualizations with graphical layers
+
+## Loading packages and data
+
+We will again use data from the `nycflights13` package. We need to load the package before generating any visualizations. 
+
+```{r - load-packages-and-data, output = FALSE}
+#install.packages("nycflights13") # run this line if you do not have it installed in your coding environment. 
+#install.packages("tidyverse")
+
+library(nycflights13)
+library(tidyverse)
+
+flights_all <- nycflights13::flights # We will again mostly use a subset of the full dataset which only contains September data. 
+
+flights_sep <- flights_all |> 
+  filter(month == 9)
+head(flights_sep)
+```
+
+## Introduction to data visualization with ggplot2
+
+The `ggplot2` package creates visualizations by combining data, variable mappings, and graphical layers.
+
+A basic plot usually contains three parts:
+
+- `ggplot()` specifies the data.
+- `aes()` maps variables to visual properties such as position, color, shape, or size.
+- A `geom_*()` function determines how observations are displayed.
+
+The `+` operator adds layers to a plot.
+
+### A first plot
+
+A scatter plot shows the relationship between two numerical variables. Each point represents one flight.
+
+```{r first-ggplot}
+flights_sep |>
+  filter(!is.na(air_time), !is.na(distance)) |>
+  slice_head(n = 1000) |>
+  ggplot(
+    mapping = aes(x = air_time, y = distance)
+  ) +
+  geom_point()
+```
+
+The pipe passes the prepared data to `ggplot()`. Therefore, we do not need to write `data = flights_sep` inside `ggplot()`.
+
+Inside `aes()`:
+
+- `air_time` determines the horizontal position.
+- `distance` determines the vertical position.
+
+### Fixed and mapped aesthetics
+
+An **aesthetic** is a visual property of a plot, such as position, color, shape, or size.
+
+A value written outside `aes()` applies to every observation.
+
+```{r fixed-point-color}
+flights_sep |>
+  filter(!is.na(air_time), !is.na(distance)) |>
+  slice_head(n = 1000) |>
+  ggplot(
+    mapping = aes(x = air_time, y = distance)
+  ) +
+  geom_point(
+    color = "magenta4",
+    alpha = 0.5
+  )
+```
+
+Here, every point has the same color. The `alpha` argument controls transparency.
+
+R has 657 built in colors. We can view the list of built-in colors. 
+
+```{r - built-in-colors}
+?ggplot2::geom_point
+grDevices::colors()[1:10]
+```
+
+A variable written inside `aes()` is mapped to an aesthetic.
+
+```{r mapped-point-color}
+flights_sep |>
+  filter(!is.na(air_time), !is.na(distance)) |>
+  slice_head(n = 1000) |>
+  ggplot(
+    mapping = aes(
+      x = air_time,
+      y = distance,
+      color = origin
+    )
+  ) +
+  geom_point(alpha = 0.5)
+```
+
+Here, color represents the flight's airport of origin. Because `origin` is mapped to color, `ggplot2` automatically creates a legend.
+
+### Bar charts for categorical variables
+
+A bar chart shows how many observations belong to each category.
+
+We will now examine the number of flights for several selected destinations. Let's first see what are all the destinations available at NYC airports.
+
+```{r - list-all-destinations}
+flights_sep |> distinct(dest)
+```
+
+Visualizing data for all destinations will make the plot look too cluttered. Looking at a few major ones will work for now. 
+
+```{r destination-bar-chart}
+flights_sep |>
+  filter(dest %in% c("ATL", "BOS", "LAX", "MIA", "ORD")) |>
+  ggplot(
+    mapping = aes(x = dest)
+  ) +
+  geom_bar()
+```
+
+`geom_bar()` counts the observations in each category automatically. Its y-axis displays the number of flights.
+
+### `geom_bar()` and `geom_col()`
+
+Use `geom_bar()` when `ggplot2` should count the observations. Use `geom_col()` when the data already contain the values that determine the heights of the bars.
+
+First, we can calculate the counts ourselves.
+
+```{r count-destinations}
+destination_counts <- flights_sep |>
+  filter(dest %in% c("ATL", "BOS", "LAX", "MIA", "ORD")) |>
+  count(dest)
+
+destination_counts
+```
+
+The variable `n` contains the number of flights to each destination.
+
+```{r destination-column-chart}
+destination_counts |>
+  ggplot(
+    mapping = aes(x = dest, y = n)
+  ) +
+  geom_col()
+```
+
+These two bar charts display the same information, but the counts are calculated at different stages.
+
+### Histograms for numerical variables
+
+A histogram displays the distribution of a numerical variable. It divides the values into intervals called **bins**.
+
+```{r air-time-histogram}
+flights_sep |>
+  filter(!is.na(air_time)) |>
+  ggplot(
+    mapping = aes(x = air_time)
+  ) +
+  geom_histogram(
+    binwidth = 30,
+    fill = "steelblue",
+    color = "white"
+  )
+```
+
+The `binwidth` argument controls the width of the intervals. Here, each interval covers 30 minutes of flight time.
+
+Different bin widths can reveal different features of the distribution.
+
+```{r air-time-larger-binwidth}
+flights_sep |>
+  filter(!is.na(air_time)) |>
+  ggplot(
+    mapping = aes(x = air_time)
+  ) +
+  geom_histogram(
+    binwidth = 100,
+    fill = "steelblue",
+    color = "white"
+  )
+```
+
+It is useful to try several reasonable bin widths before choosing one.
+
+::: {.callout-note collapse="false"} 
+
+`binwidth` controls bin width, but not where the first bin begins. To control where the first bin begins on the x axis, we can use `boundary`. When this argument is not supplied within a `geom_` function, `ggplot2` determines first bin position automatically and places the remaining bins at intervals equal to the specified binwidth. Below is an example with `boundary`:
+
+:::
+
+```{r air-time-histogram-boundary}
+flights_sep |>
+  filter(!is.na(air_time)) |>
+  ggplot(
+    mapping = aes(x = air_time)
+  ) +
+  geom_histogram(
+    binwidth = 100,
+    boundary = 0,
+    fill = "steelblue",
+    color = "white"
+  )
+```
+
+
+### Boxplots for numerical and categorical variables
+
+A boxplot can compare the distribution of a numerical variable across categories.
+
+```{r departure-delay-boxplot}
+flights_sep |>
+  filter(
+    !is.na(dep_delay),
+    carrier %in% c("AA", "B6", "DL", "UA")
+  ) |>
+  ggplot(
+    mapping = aes(x = carrier, y = dep_delay)
+  ) +
+  geom_boxplot()
+```
+
+The line inside each box represents the median. The box contains the middle half of the observed values. Points beyond the whiskers are potential outliers.
+
+Extreme delays make the boxes difficult to see. We can focus the displayed y-axis without removing observations from the calculation.
+
+```{r departure-delay-boxplot-zoom}
+flights_sep |>
+  filter(
+    !is.na(dep_delay),
+    carrier %in% c("AA", "B6", "DL", "UA")
+  ) |>
+  ggplot(
+    mapping = aes(x = carrier, y = dep_delay)
+  ) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(-30, 120)) + 
+  theme_minimal()
+```
+
+`coord_cartesian()` zooms in on part of the plot. It does not filter observations from the data.
+
+### Adding labels and a theme
+
+We can use `labs()` to add an informative title and clearer axis labels. A `theme` controls the plot's general appearance.
+
+```{r labelled-flight-plot}
+flights_sep |>
+  filter(!is.na(air_time), !is.na(distance)) |>
+  slice_head(n = 10000) |>
+  ggplot(
+    mapping = aes(
+      x = air_time,
+      y = distance,
+      color = origin
+    )
+  ) +
+  geom_point(alpha = 0.5) +
+  labs(
+    title = "Flight distance and time in the air",
+    x = "Time in the air (minutes)",
+    y = "Distance (miles)",
+    color = "Origin airport"
+  ) +
+  theme_minimal()
+```
+
+Good labels help readers understand a visualization without having to inspect the code.
+
+### Small multiples with facets
+
+Faceting divides a plot into panels. Each panel displays a subset of the data.
+
+```{r flight-facets}
+flights_sep |>
+  filter(!is.na(air_time), !is.na(distance)) |>
+  slice_head(n = 1000) |>
+  ggplot(
+    mapping = aes(x = air_time, y = distance)
+  ) +
+  geom_point(alpha = 0.4, color = "steelblue") +
+  facet_wrap(~ origin) +
+  labs(
+    title = "Flight distance and time by origin airport",
+    x = "Time in the air (minutes)",
+    y = "Distance (miles)"
+  ) +
+theme_light()
+```
+
+`facet_wrap(~ origin)` creates one panel for each origin airport. Because the panels use the same axes, their patterns can be compared.
