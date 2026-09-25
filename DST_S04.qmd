@@ -1,0 +1,523 @@
+---
+title: "Session 04: Building more complex data visualizations"
+format:
+  html:
+    code-fold: true
+    code-copy: false
+    toc: true
+    number-sections: false
+execute:
+  echo: true
+---
+
+## Learning goals
+- Building more complex visualizations
+- Generating density curves for analyzing a numerical variable's distribution
+- Visualizing compositional makeup of quantities
+- Fitting trend line to scatter plots
+- Saving and exporting plots to use them outside your coding environment
+
+## Loading packages and data
+
+We will continue using the `nycflights13` data. The package contains several related dataframes that can be combined.
+
+```{r load-packages-and-data}
+# install.packages("nycflights13") # Run this line if needed.
+# install.packages("tidyverse")
+# install.packages("lubridate")
+
+library(nycflights13)
+library(tidyverse)
+
+flights_all <- nycflights13::flights
+
+flights_sep <- flights_all |>
+  filter(month == 9)
+
+head(flights_sep)
+```
+
+
+## Building more complex visualizations
+
+The following examples combine data preparation, statistical summaries, scales, and several graphical layers. The goal is to make each design decision explicit.
+
+### Controlling the order of categories
+
+By default, categories are often shown alphabetically. We can calculate flight counts and use `reorder()` to arrange destinations by frequency.
+
+```{r ordered-destination-bars}
+top_destinations <- flights_sep |>
+  count(dest, sort = TRUE) |>
+  slice_head(n = 12)
+
+top_destinations |>
+  ggplot(
+    mapping = aes(
+      x = reorder(dest, n),
+      y = n
+    )
+  ) +
+  geom_col(
+    fill = "steelblue",
+    width = 0.75
+  ) +
+  coord_flip() +
+  labs(
+    title = "Most common destinations in September",
+    subtitle = "Twelve destinations with the largest numbers of flights",
+    x = NULL,
+    y = "Number of flights"
+  ) +
+  theme_minimal()
+```
+
+`reorder(dest, n)` orders the destination codes using the values in `n`. `coord_flip()` exchanges the horizontal and vertical axes.
+
+### Adding text to bars
+
+Text can be added as another graphical layer. The same variables used to draw the bars can also determine the labels.
+
+```{r labelled-destination-bars}
+top_destinations |>
+  ggplot(
+    mapping = aes(
+      x = reorder(dest, n),
+      y = n
+    )
+  ) +
+  geom_col(
+    fill = "steelblue4",
+    width = 0.75
+  ) +
+  geom_text(
+    mapping = aes(label = n),
+    hjust = -0.15,
+    size = 3.5
+  ) +
+  coord_flip() +
+  scale_y_continuous(
+    expand = expansion(mult = c(0, 0.2))
+  ) +
+  labs(
+    title = "Most common destinations in September",
+    x = NULL,
+    y = "Number of flights"
+  ) +
+  theme_minimal()
+```
+
+The `expand` argument creates space beyond the longest bar so that its label is not cut off.
+
+### Proportions instead of counts
+
+Counts answer how many flights belong to each category. Proportions answer what share of flights belongs to each category.
+
+```{r origin-proportions-data}
+origin_shares <- flights_sep |>
+  count(origin) |>
+  mutate(
+    proportion = n / sum(n),
+    percent = 100 * proportion
+  )
+
+origin_shares
+```
+
+```{r origin-proportions-plot}
+origin_shares |>
+  ggplot(
+    mapping = aes(
+      x = origin,
+      y = proportion,
+      fill = origin
+    )
+  ) +
+  geom_col(
+    width = 0.7,
+    show.legend = FALSE
+  ) +
+  geom_text(
+    mapping = aes(
+      label = scales::percent(
+        proportion,
+        accuracy = 0.1
+      )
+    ),
+    vjust = -0.4
+  ) +
+  scale_y_continuous(
+    labels = scales::label_percent(),
+    limits = c(0, 0.5)
+  ) +
+  labs(
+    title = "Share of September flights by origin",
+    x = "Origin airport",
+    y = "Share of flights"
+  ) +
+  theme_minimal()
+```
+
+### Stacked bars
+
+A stacked bar chart can show a total and its composition. Here, each bar represents a destination and each colored segment represents an origin airport.
+
+```{r stacked-bars-data}
+selected_destinations <- c(
+  "ATL",
+  "BOS",
+  "LAX",
+  "MIA",
+  "ORD"
+)
+
+destination_origin_counts <- flights_sep |>
+  filter(dest %in% selected_destinations) |>
+  count(dest, origin)
+
+destination_origin_counts
+```
+
+```{r stacked-destination-bars}
+destination_origin_counts |>
+  ggplot(
+    mapping = aes(
+      x = dest,
+      y = n,
+      fill = origin
+    )
+  ) +
+  geom_col() +
+  labs(
+    title = "Flights to selected destinations",
+    subtitle = "Bars are divided by origin airport",
+    x = "Destination",
+    y = "Number of flights",
+    fill = "Origin"
+  ) +
+  theme_minimal()
+```
+
+### Filled bars for conditional proportions
+
+Setting `position = "fill"` makes every bar the same height. This emphasizes composition rather than totals.
+
+```{r proportional-stacked-bars}
+destination_origin_counts |>
+  ggplot(
+    mapping = aes(
+      x = dest,
+      y = n,
+      fill = origin
+    )
+  ) +
+  geom_col(
+    position = "fill"
+  ) +
+  scale_y_continuous(
+    labels = scales::label_percent()
+  ) +
+  labs(
+    title = "Origin composition by destination",
+    x = "Destination",
+    y = "Share of flights",
+    fill = "Origin"
+  ) +
+  theme_minimal()
+```
+
+### Side-by-side bars
+
+Setting `position = "dodge"` places groups beside each other, making absolute counts easier to compare.
+
+```{r dodged-destination-bars}
+destination_origin_counts |>
+  ggplot(
+    mapping = aes(
+      x = dest,
+      y = n,
+      fill = origin
+    )
+  ) +
+  geom_col(
+    position = "dodge"
+  ) +
+  labs(
+    title = "Flight counts by destination and origin",
+    x = "Destination",
+    y = "Number of flights",
+    fill = "Origin"
+  ) +
+  theme_minimal()
+```
+
+### Comparing distributions with density curves
+
+A density curve is a smoothed representation of a numerical distribution. It is useful for comparing the shapes of distributions.
+
+```{r delay-density-curves}
+flights_sep |>
+  filter(
+    !is.na(dep_delay),
+    between(dep_delay, -30, 180)
+  ) |>
+  ggplot(
+    mapping = aes(
+      x = dep_delay,
+      color = origin,
+      fill = origin
+    )
+  ) +
+  geom_density(
+    alpha = 0.18,
+    linewidth = 1
+  ) +
+  geom_vline(
+    xintercept = 0,
+    linetype = "dashed",
+    color = "grey30"
+  ) +
+  labs(
+    title = "Distribution of departure delays",
+    subtitle = "Displayed range: -30 to 180 minutes",
+    x = "Departure delay (minutes)",
+    y = "Density",
+    color = "Origin",
+    fill = "Origin"
+  ) +
+  theme_minimal()
+```
+
+
+### Violin plots and boxplots together
+
+A violin plot shows the shape of a distribution. A boxplot summarizes its median and quartiles. Layers allow us to display both.
+
+```{r violin-and-boxplot}
+flights_sep |>
+  filter(
+    !is.na(dep_delay),
+    carrier %in% c("AA", "B6", "DL", "UA"),
+    between(dep_delay, -30, 120)
+  ) |>
+  ggplot(
+    mapping = aes(
+      x = carrier,
+      y = dep_delay,
+      fill = carrier
+    )
+  ) +
+  geom_violin(
+    alpha = 0.55,
+    color = NA,
+    trim = FALSE
+  ) +
+  geom_boxplot(
+    width = 0.16,
+    outlier.shape = NA,
+    fill = "white"
+  ) +
+  guides(fill = "none") +
+  labs(
+    title = "Departure-delay distributions",
+    subtitle = "Violin shapes with boxplot summaries",
+    x = "Carrier",
+    y = "Departure delay (minutes)"
+  ) +
+  theme_minimal()
+```
+
+
+### Adding a fitted trend
+
+`geom_smooth()` estimates a relationship between two numerical variables. Here we compare the points with a linear trend.
+
+```{r scatterplot-with-linear-trend}
+set.seed(2026)
+
+flights_sep |>
+  filter(
+    !is.na(air_time),
+    !is.na(distance)
+  ) |>
+  slice_sample(n = 1000) |>
+  ggplot(
+    mapping = aes(
+      x = air_time,
+      y = distance
+    )
+  ) +
+  geom_point(
+    alpha = 0.15,
+    color = "steelblue"
+  ) +
+  geom_smooth(
+    method = "lm",
+    se = TRUE,
+    color = "firebrick",
+    fill = "mistyrose"
+  ) +
+  labs(
+    title = "Distance and time in the air",
+    subtitle = "Points with an estimated linear trend",
+    x = "Time in the air (minutes)",
+    y = "Distance (miles)"
+  ) +
+  theme_minimal()
+```
+
+
+Let's generate some synthetic data to explore different relationship patterns. 
+
+```{r synthetic-data-generation}
+set.seed(2998)
+
+x = rnorm(1000, 50, 10)
+y = 1.5*x + rnorm(1000,40,10) # we are generating y as a function of x 
+
+fake_data = tibble(x = x, y = y)
+
+fake_data |> 
+  glimpse()
+```
+
+We will now explore the direction and strength of this relationship with a scatter plot. 
+
+```{r scatterplot-with-trend-synthetic-data}
+set.seed(2026)
+
+fake_data |>
+  ggplot(
+    mapping = aes(
+      x = x,
+      y = y
+    )
+  ) +
+  geom_point(
+    alpha = 0.15,
+    color = "steelblue"
+  ) +
+  geom_smooth(
+    method = "lm",
+    se = TRUE,
+    color = "firebrick",
+    fill = "mistyrose"
+  ) +
+  labs(
+    title = "Relationship between x and y"
+  ) +
+  theme_minimal()
+```
+
+Try to see how the data and the fitted line changes when you change x variable's coefficient in y variable equation. 
+
+### Visualizing missing values over time
+
+Missingness can itself be informative. We can calculate the daily percentage of flights with missing departure-delay values.
+
+```{r daily-missingness-data}
+daily_missingness <- flights_sep |>
+  mutate(
+    date = as.Date(
+      paste(year, month, day, sep = "-")
+    )
+  ) |>
+  group_by(date, origin) |>
+  summarize(
+    total_flights = n(),
+    missing_dep_delay = sum(
+      is.na(dep_delay)
+    ),
+    missing_share = mean(
+      is.na(dep_delay)
+    ),
+    .groups = "drop"
+  )
+
+daily_missingness
+```
+
+```{r daily-missingness-plot}
+daily_missingness |>
+  ggplot(
+    mapping = aes(
+      x = date,
+      y = missing_share,
+      color = origin
+    )
+  ) +
+  geom_line(
+    linewidth = 0.8
+  ) +
+  geom_point(
+    size = 1.5
+  ) +
+  scale_y_continuous(
+    labels = scales::label_percent(
+      accuracy = 0.1
+    )
+  ) +
+  scale_x_date(
+    date_breaks = "1 week",
+    date_labels = "%b %d"
+  ) +
+  labs(
+    title = "Missing departure-delay values by day",
+    x = NULL,
+    y = "Flights with missing departure delay",
+    color = "Origin"
+  ) +
+  theme_minimal()
+```
+
+### Saving a plot as an object
+
+A plot can be stored in an R object. This makes it easier to print, modify, or save later.
+
+```{r create-plot-object}
+distance_time_plot <- flights_sep |>
+  filter(
+    !is.na(air_time),
+    !is.na(distance)
+  ) |>
+  slice_head(n = 1500) |>
+  ggplot(
+    mapping = aes(
+      x = air_time,
+      y = distance,
+      color = origin
+    )
+  ) +
+  geom_point(
+    alpha = 0.3
+  ) +
+  geom_smooth(
+    method = "lm",
+    se = FALSE
+  ) +
+  labs(
+    title = "Distance and time in the air",
+    x = "Time in the air (minutes)",
+    y = "Distance (miles)",
+    color = "Origin"
+  ) +
+  theme_minimal()
+
+distance_time_plot
+```
+
+### Saving a plot to a file
+
+`ggsave()` saves the most recently displayed plot or a named plot object. 
+
+```{r save-plot-file, eval=FALSE}
+ggsave(
+  filename = "distance-time-plot.png",
+  plot = distance_time_plot,
+  width = 8,
+  height = 5,
+  units = "in",
+  dpi = 300
+)
+```
+
