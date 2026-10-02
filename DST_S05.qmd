@@ -1,0 +1,435 @@
+---
+title: "Session 05: Working with relational data and time series data"
+format:
+  html:
+    code-fold: true
+    code-copy: false
+    toc: true
+    number-sections: false
+execute:
+  echo: true
+---
+
+## Learning goals
+
+- Understanding the unit of observation and identifying keys
+- Combining related dataframes with joins
+- Working with dates, times, strings, and factors
+- Constructing and auditing an analysis-ready dataset
+
+## Loading packages and data
+
+We will continue using the `nycflights13` data. This package contains several related dataframes. So far, we only used `flights` dataset, which contains information at flight level. 
+
+```{r load-packages-and-data, output = FALSE}
+# install.packages("nycflights13") # Run this line if needed.
+# install.packages("tidyverse")
+# install.packages("lubridate")
+
+library(nycflights13)
+library(tidyverse)
+library(lubridate)
+
+flights_all <- nycflights13::flights
+
+set.seed(2026)
+
+flights_sample <- flights_all |>
+  slice_sample(n = 10000) |>
+  mutate(sample_id = row_number())
+
+head(flights_sample)
+```
+
+`set.seed()` makes the random draw reproducible. `sample_id` is a simple identifier for rows in this sample; a flight number alone does not uniquely identify a flight.
+
+The package contains five main dataframes:
+
+- `flights`: individual flights departing New York City
+- `airlines`: airline names and carrier codes
+- `airports`: airport names and locations
+- `planes`: information about aircraft
+- `weather`: hourly weather measurements
+
+```{r inspect-related-dataframes}
+#glimpse(airlines)
+#glimpse(airports)
+glimpse(planes)
+#glimpse(weather)
+```
+
+
+## The unit of observation
+
+The **unit of observation** is what one row represents.
+
+In `flights_sample`, one row represents one scheduled flight.
+
+```{r unit-of-observation-flights}
+flights_sample |>
+  select(year, month, day, carrier, flight, origin, dest) |>
+  slice_head(n =10)
+```
+
+In `airlines`, one row represents one airline.
+
+```{r unit-of-observation-airlines}
+airlines
+```
+
+In `airports`, one row represents one airport.
+
+```{r unit-of-observation-airports}
+airports |>
+  slice_head(n = 10)
+```
+
+The unit of observation determines what questions the dataframe can answer. It also determines how we should join, summarize, and model the data. 
+
+
+## Identifiers and keys
+
+A **key** is one or more variables that identify observations or connect dataframes. The carrier code is unique in `airlines`.
+
+```{r check-airline-key}
+airlines <- nycflights13::airlines
+glimpse(airlines)
+
+length(unique(airlines$carrier))
+length(unique(airlines$carrier)) == nrow(airlines) # base R way to check
+ 
+
+airlines |>
+  count(carrier) |>
+  filter(n > 1)
+
+```
+
+An empty result indicates no repeated carrier codes. For the weather data, the useful key is **both** `origin` and `time_hour`.
+
+```{r check-weather-key}
+weather <- nycflights13::weather
+
+weather |>
+  slice_head()
+
+repeated_rows <- weather |>
+  select(origin, year, month, day, hour, time_hour) |>
+  add_count(origin, year, month, day, hour) |>
+  filter(n > 1)
+  
+
+repeated_rows
+
+as.numeric(repeated_rows$time_hour)
+
+weather |>
+  count(origin, time_hour) |>
+  filter(n > 1)
+```
+
+This check should also return no rows. By contrast, `origin`, `year`, `month`, `day`, and `hour` do not uniquely identify every weather row: the 1 a.m. hour occurs twice when daylight saving time ends. The date-time value `time_hour` distinguishes those observations.
+
+
+## Joining flights and weather
+
+Both `flights` and `weather` contain `time_hour`. In `flights`, it is the scheduled departure hour; in `weather`, it is the observation hour. We match on this date-time and the origin airport. We select only the needed weather columns before joining.
+
+```{r prepare-weather-lookup}
+weather_lookup <- weather |>
+  select(
+    origin,
+    time_hour,
+    temp,
+    wind_speed,
+    precip
+  ) |>
+  mutate(weather_recorded = TRUE)
+
+glimpse(weather_lookup)
+```
+
+Each sampled flight can match at most one weather observation. Many flights may share one airport-hour, so the expected relationship is many-to-one.
+
+```{r join-weather-to-flights}
+flights_weather <- flights_sample |>
+  left_join(
+    weather_lookup,
+    by = join_by(origin, time_hour),
+    relationship = "many-to-one"
+  ) |>
+  mutate(
+    weather_recorded = replace_na(weather_recorded, FALSE)
+  )
+
+flights_weather |>
+  select(
+    sample_id,
+    origin,
+    sched_dep_time,
+    time_hour,
+    dep_delay,
+    temp,
+    wind_speed,
+    precip
+  ) |>
+  slice_head(n = 10)
+```
+
+`left_join()` keeps every sampled flight. An unmatched flight gets `NA` in the added weather columns, while `weather_recorded` becomes `FALSE`.
+
+```{r audit-weather-join}
+nrow(flights_sample)
+nrow(flights_weather)
+nrow(flights_sample) == nrow(flights_weather)
+n_distinct(flights_weather$sample_id) == nrow(flights_weather)
+
+flights_weather |>
+  summarize(
+    no_weather_match = sum(!weather_recorded),
+    matched_but_temp_missing = sum(
+      weather_recorded & is.na(temp)
+    )
+  )
+```
+
+These last two counts answer different questions. A matched weather row may still have a missing temperature measurement.
+
+`anti_join()` shows flights with no matching airport-hour in the weather dataset.
+
+```{r inspect-unmatched-weather-keys}
+flights_sample |>
+  anti_join(
+    weather_lookup,
+    by = join_by(origin, time_hour)
+  ) |>
+  select(sample_id, origin, time_hour) |>
+  slice_head(n = 10)
+```
+
+### Adding airline names
+
+Airline operations may also relate to departure delays. We can add names without changing the flight-level unit of observation.
+
+```{r join-airline-names}
+flights_weather <- flights_weather |>
+  left_join(
+    airlines,
+    by = join_by(carrier),
+    relationship = "many-to-one"
+  ) |>
+  rename(airline_name = name)
+
+nrow(flights_weather)
+
+flights_weather |>
+  select(carrier, airline_name, origin, dep_delay) |>
+  slice_head(n = 10)
+```
+
+Other joins answer different questions: `inner_join()` keeps matches on both sides; `semi_join()` keeps left-hand rows with a match; `anti_join()` keeps left-hand rows without one.
+
+## Dates, times, strings, and factors
+
+The `time_hour` column is a `POSIXct` date-time. The year, month, and day columns allow us to make a calendar date without losing the flight's recorded departure date.
+
+```{r create-time-and-label-variables}
+flights_weather <- flights_weather |>
+  mutate(
+    flight_date = make_date(year, month, day),
+    weekday = wday(
+      flight_date,
+      label = TRUE,
+      week_start = 1
+    ),
+    week_start = floor_date(
+      flight_date,
+      unit = "week",
+      week_start = 1
+    ),
+    scheduled_hour = hour,
+    flight_code = str_c(carrier, flight, sep = "-")
+  )
+
+flights_weather |>
+  select(
+    flight_code,
+    flight_date,
+    weekday,
+    time_hour,
+    week_start,
+    scheduled_hour
+  ) |>
+  slice_head(n = 10)
+```
+
+`str_c()` joins pieces of text into a readable flight label. `wday(label = TRUE)` creates an ordered factor of weekday names. A factor represents categories with an explicit order, useful for tables and plots. `week_start` groups dates into calendar weeks; the first week may begin in December 2012 even though every sampled flight occurred in 2013.
+
+## Creating variables for the weather question
+
+We define rain from precipitation, stronger wind from wind speed, and a 30-minute departure-delay indicator. Missing measurements remain missing.
+
+```{r create-analysis-variables}
+flights_weather <- flights_weather |>
+  mutate(
+    rainy = precip > 0,
+    strong_wind = wind_speed >= 20,
+    delayed_30 = dep_delay >= 30,
+    weather_condition = case_when(
+      !weather_recorded ~ "No weather match",
+      is.na(precip) | is.na(wind_speed) ~ "Incomplete weather",
+      rainy & strong_wind ~ "Rain and stronger wind",
+      rainy ~ "Rain",
+      strong_wind ~ "Stronger wind",
+      TRUE ~ "No rain / lighter wind"
+    ),
+    weather_condition = factor(
+      weather_condition,
+      levels = c(
+        "No rain / lighter wind",
+        "Rain",
+        "Stronger wind",
+        "Rain and stronger wind",
+        "Incomplete weather",
+        "No weather match"
+      )
+    )
+  )
+
+flights_weather |>
+  count(weather_condition, .drop = FALSE)
+```
+
+The 20 mph wind threshold is a teaching choice. A different threshold could change the comparison, so it must be reported. `case_when()` evaluates its conditions from top to bottom. The factor levels keep the categories in a deliberate order.
+
+## Basic exploration of delays and weather
+
+First, inspect missing outcomes and weather coverage. A missing departure delay must not be replaced with zero.
+
+```{r missingness-audit}
+flights_weather |>
+  summarize(
+    sampled_flights = n(),
+    missing_dep_delay = sum(is.na(dep_delay)),
+    no_weather_match = sum(!weather_recorded),
+    missing_precip = sum(is.na(precip)),
+    missing_wind_speed = sum(is.na(wind_speed))
+  )
+```
+
+For a direct rain comparison, use flights with a known departure delay and precipitation measurement. This defines the denominator for both groups.
+
+```{r summarize-delays-by-rain}
+rain_comparison <- flights_weather |>
+  filter(
+    !is.na(dep_delay),
+    !is.na(rainy)
+  ) |>
+  group_by(rainy) |>
+  summarize(
+    flights = n(),
+    mean_delay = mean(dep_delay),
+    median_delay = median(dep_delay),
+    share_delayed_30 = mean(delayed_30),
+    .groups = "drop"
+  ) |>
+  mutate(
+    rain_status = if_else(rainy, "Rain", "No rain")
+  )
+
+rain_comparison
+```
+
+The median is less sensitive than the mean to a few very large delays. The groups may also differ in airport, season, time of day, or airline; this table alone cannot isolate an effect of rain.
+
+```{r plot-rain-comparison}
+rain_comparison |>
+  ggplot(
+    mapping = aes(
+      x = rain_status,
+      y = mean_delay
+    )
+  ) +
+  geom_col(fill = "steelblue") +
+  labs(
+    title = "Mean departure delay by scheduled-hour rain",
+    subtitle = "Flights with observed delay and precipitation",
+    x = NULL,
+    y = "Mean departure delay (minutes)"
+  ) +
+  theme_minimal()
+```
+
+We can inspect the wind relationship without deciding immediately on a single threshold.
+
+```{r explore-wind-bands}
+flights_weather |>
+  filter(
+    !is.na(dep_delay),
+    !is.na(wind_speed)
+  ) |>
+  mutate(
+    wind_band = cut(
+      wind_speed,
+      breaks = c(-Inf, 5, 10, 15, 20, Inf),
+      right = FALSE
+    )
+  ) |>
+  group_by(wind_band) |>
+  summarize(
+    flights = n(),
+    mean_delay = mean(dep_delay),
+    .groups = "drop"
+  )
+```
+
+Check group sizes before interpreting any average based on only a few flights.
+
+## Reshaping a weather comparison
+
+We can summarize rain and no-rain flights within each origin airport. Each row below is an airport and rain-status combination.
+
+```{r origin-rain-long}
+origin_rain_long <- flights_weather |>
+  filter(
+    !is.na(dep_delay),
+    !is.na(rainy)
+  ) |>
+  mutate(
+    rain_status = if_else(rainy, "rain", "no_rain")
+  ) |>
+  group_by(origin, rain_status) |>
+  summarize(
+    mean_delay = mean(dep_delay),
+    flights = n(),
+    .groups = "drop"
+  )
+
+origin_rain_long
+```
+
+`pivot_wider()` places the two rain-status means in separate columns. Each row then represents one airport.
+
+```{r origin-rain-wide}
+origin_rain_wide <- origin_rain_long |>
+  select(origin, rain_status, mean_delay) |>
+  pivot_wider(
+    names_from = rain_status,
+    values_from = mean_delay
+  )
+
+origin_rain_wide
+```
+
+`pivot_longer()` reverses that layout. It restores one row per airport and rain status.
+
+```{r origin-rain-long-again}
+origin_rain_wide |>
+  pivot_longer(
+    cols = c(no_rain, rain),
+    names_to = "rain_status",
+    values_to = "mean_delay"
+  )
+```
+
+Reshaping changes the unit of observation of the summary table. It does not alter the flight-level dataset.
